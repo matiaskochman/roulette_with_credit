@@ -7,7 +7,7 @@ import "hardhat/console.sol";
 contract Ruleta is Ownable {
     IERC20 private token;
 
-    enum GameState { CREADO, SE_PERMITEN_APUESTAS, NO_SE_PERMITEN_APUESTAS, TERMINADO }
+    enum GameState { CREADO, SE_PERMITEN_APUESTAS, NO_SE_PERMITEN_APUESTAS, RESULTADO_OBTENIDO, TERMINADO }
 
     struct Bet {
         uint256 id;
@@ -22,7 +22,7 @@ contract Ruleta is Ownable {
         uint8 winnerNumber;
         address[] winners;
     }
-
+    uint256 public earnings;
     uint256 private currentGameId = 0;
     mapping(uint256 => Game) public games;
     mapping(uint256 => uint8) public gameIdToBetIdCounterMap;
@@ -81,32 +81,42 @@ contract Ruleta is Ownable {
         for (uint8 i = 0; i < totalBets; i++) {
             totalAmount += gameToBetMap[gameId][i].amount;
         }
-
-        // Generar un número aleatorio que se utilizará como índice para seleccionar al ganador
-        uint8 winningIndex = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % totalBets);
         
-        // Utilizar el número aleatorio como índice para seleccionar al ganador
-        Bet storage winningBet = gameToBetMap[gameId][winningIndex];
-        uint8 winnerNumber = winningBet.number;
-        address winnerAddress = winningBet.player;
-
-        // Calcula el 80% de la recaudación total para el ganador
-        uint256 winnerAmount = (totalAmount * 80) / 100;
-
-        // Actualiza el estado del juego y asigna el número y la dirección del ganador
+        // Generate a random number between 0 and 36
+        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % 37);
+        
         games[gameId].winnerNumber = winnerNumber;
-        games[gameId].winners.push(winnerAddress);
+        games[gameId].state = GameState.RESULTADO_OBTENIDO;
         
-        // Transfiere el 80% de la recaudación al ganador
-        require(token.transfer(winnerAddress, winnerAmount), "Transfer failed");
-
-        // El restante 20% se queda en el contrato como fee
-        // No necesitas hacer nada específico para esto, ya que los tokens ya están en el contrato
-
-        // Cambiar el estado del juego a TERMINADO
-        games[gameId].state = GameState.TERMINADO;
+        // Update earnings (20% of totalAmount)
+        earnings += (totalAmount * 20) / 100;
     }
 
+    function withdraw(uint256 gameId) public {
+        require(games[gameId].state == GameState.RESULTADO_OBTENIDO, "El juego debe estar en estado 'RESULTADO_OBTENIDO' para retirar las ganancias");
+        
+        uint8 totalBets = gameIdToBetIdCounterMap[gameId];
+        uint256 totalAmount = 0;
+        bool isWinner = false;
+
+        for (uint8 i = 0; i < totalBets; i++) {
+            Bet storage bet = gameToBetMap[gameId][i];
+            totalAmount += bet.amount;
+            if (bet.player == msg.sender && bet.number == games[gameId].winnerNumber) {
+                isWinner = true;
+            }
+        }
+
+        require(isWinner, "No eres el ganador");
+
+        uint256 winnerAmount = (totalAmount * 80) / 100;
+
+        // Transfer winnings to the winner
+        require(token.transfer(msg.sender, winnerAmount), "Transfer failed");
+
+        // Change game state to TERMINADO
+        games[gameId].state = GameState.TERMINADO;
+    }
 
     function getGameWinners(uint256 gameId) public view returns(address[] memory) {
         return games[gameId].winners;
