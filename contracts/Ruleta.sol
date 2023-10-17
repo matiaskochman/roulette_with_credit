@@ -76,20 +76,37 @@ contract Ruleta is Ownable {
         // Asegurarse de que hay apuestas antes de intentar seleccionar un ganador
         require(totalBets > 0, "No hay apuestas para este juego");
 
+        // Calcular la cantidad total de tokens en juego
+        uint256 totalAmount = 0;
+        for (uint8 i = 0; i < totalBets; i++) {
+            totalAmount += gameToBetMap[gameId][i].amount;
+        }
+
         // Generar un número aleatorio que se utilizará como índice para seleccionar al ganador
         uint8 winningIndex = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % totalBets);
         
         // Utilizar el número aleatorio como índice para seleccionar al ganador
         Bet storage winningBet = gameToBetMap[gameId][winningIndex];
         uint8 winnerNumber = winningBet.number;
+        address winnerAddress = winningBet.player;
 
+        // Calcula el 80% de la recaudación total para el ganador
+        uint256 winnerAmount = (totalAmount * 80) / 100;
+
+        // Actualiza el estado del juego y asigna el número y la dirección del ganador
         games[gameId].winnerNumber = winnerNumber;
-        games[gameId].winners.push(winningBet.player);
+        games[gameId].winners.push(winnerAddress);
         
-        // Aquí podrías también transferir tokens ganados al jugador
-        
+        // Transfiere el 80% de la recaudación al ganador
+        require(token.transfer(winnerAddress, winnerAmount), "Transfer failed");
+
+        // El restante 20% se queda en el contrato como fee
+        // No necesitas hacer nada específico para esto, ya que los tokens ya están en el contrato
+
+        // Cambiar el estado del juego a TERMINADO
         games[gameId].state = GameState.TERMINADO;
     }
+
 
     function getGameWinners(uint256 gameId) public view returns(address[] memory) {
         return games[gameId].winners;
