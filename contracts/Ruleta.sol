@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "hardhat/console.sol";
 contract Ruleta is Ownable {
     IERC20 private token;
-
+    uint8 ruletaTop = 37;
     enum GameState { CREADO, SE_PERMITEN_APUESTAS, NO_SE_PERMITEN_APUESTAS, RESULTADO_OBTENIDO, TERMINADO }
 
     struct Bet {
@@ -83,7 +83,7 @@ contract Ruleta is Ownable {
         }
         
         // Generate a random number between 0 and 36
-        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % 37);
+        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % ruletaTop);
         
         games[gameId].winnerNumber = winnerNumber;
         games[gameId].state = GameState.RESULTADO_OBTENIDO;
@@ -94,27 +94,28 @@ contract Ruleta is Ownable {
 
     function withdraw(uint256 gameId) public {
         require(games[gameId].state == GameState.RESULTADO_OBTENIDO, "El juego debe estar en estado 'RESULTADO_OBTENIDO' para retirar las ganancias");
-        
-        uint8 totalBets = gameIdToBetIdCounterMap[gameId];
-        uint256 totalAmount = 0;
-        bool isWinner = false;
 
+        bool isWinner = false;
+        uint256 winnerTotalBetAmount = 0;  // Almacena la cantidad total apostada por el ganador en el número ganador
+
+        uint8 totalBets = gameIdToBetIdCounterMap[gameId];
         for (uint8 i = 0; i < totalBets; i++) {
             Bet storage bet = gameToBetMap[gameId][i];
-            totalAmount += bet.amount;
             if (bet.player == msg.sender && bet.number == games[gameId].winnerNumber) {
                 isWinner = true;
+                winnerTotalBetAmount += bet.amount;  // Sumar todas las apuestas ganadoras para este jugador
             }
         }
 
         require(isWinner, "No eres el ganador");
 
-        uint256 winnerAmount = (totalAmount * 80) / 100;
+        // Calcular las ganancias como 36 veces la cantidad total apostada por el ganador en el número ganador
+        uint256 winnerAmount = winnerTotalBetAmount * 36;
 
-        // Transfer winnings to the winner
+        // Transferir las ganancias al ganador
         require(token.transfer(msg.sender, winnerAmount), "Transfer failed");
 
-        // Change game state to TERMINADO
+        // Cambiar el estado del juego a TERMINADO
         games[gameId].state = GameState.TERMINADO;
     }
 
