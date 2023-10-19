@@ -25,8 +25,8 @@ describe("Ruleta", function () {
   beforeEach(async function () {
     [owner, ...users] = await ethers.getSigners();
 
-    const StableTokenMock = await ethers.getContractFactory("StableTokenMock");
-    stableTokenMock = await StableTokenMock.deploy();
+    const UsdtTokenMock = await ethers.getContractFactory("UsdtTokenMock");
+    stableTokenMock = await UsdtTokenMock.deploy();
     await stableTokenMock.deployed(); // Ensure deployment is complete
 
     const Ruleta = await ethers.getContractFactory("Ruleta");

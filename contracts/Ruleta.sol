@@ -148,7 +148,6 @@ function withdraw(uint256 gameId, uint8 betId) public {
     // Reset the bet winnings to prevent reentrancy
     bet.winnings = 0;
 
-
     // Transfer the winnings from Tesoreria to the player
     Tesoreria(tesoreriaContract).withdrawWinnings(msg.sender, winnings);
     // // Transfer the winnings to the player
