@@ -99,12 +99,19 @@ contract Ruleta is Ownable {
         uint8 winnerNumber = games[gameId].winnerNumber;
         address[] memory winnersList = new address[](totalBets); // tamaño máximo posible
         uint256 winnerCount = 0;
+        uint256 totalLostInBets = 0;
+        uint256 totalWonInBets = 0;
 
         for (uint8 i = 0; i < totalBets; i++) {
             Bet storage bet = gameToBetMap[gameId][i];
             if (bet.number == winnerNumber) {
                 bet.isWinner = true;
-                bet.winnings = bet.amount * 36;  // Set the winnings for this bet
+                bet.winnings = bet.amount * 36; // Establecer las ganancias de esta apuesta
+                totalWonInBets += bet.winnings;
+                winnersList[winnerCount] = bet.player; // Agregar el ganador al array
+                winnerCount++;
+            } else {
+                totalLostInBets += bet.amount;
             }
         }
 
@@ -117,17 +124,10 @@ contract Ruleta is Ownable {
         games[gameId].winners = actualWinnersList;
         games[gameId].state = GameState.TERMINADO; // Puedes cambiar el estado a TERMINADO aquí si deseas
 
-        uint256 totalLost = 0;
-        for (uint8 i = 0; i < totalBets; i++) {
-            Bet storage bet = gameToBetMap[gameId][i];
-            if (bet.number != winnerNumber) {
-                totalLost += bet.amount;
-            }
-        }
 
-        if (totalLost > 0) {
-            require(token.approve(tesoreriaContract, totalLost), "Aprobacion fallida");
-            Tesoreria(tesoreriaContract).deposit(totalLost);
+        if (totalLostInBets > 0) {
+            require(token.approve(tesoreriaContract, totalLostInBets), "Aprobacion fallida");
+            Tesoreria(tesoreriaContract).deposit(totalLostInBets);
         }
     }
 
