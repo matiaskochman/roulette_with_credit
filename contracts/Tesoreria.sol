@@ -13,6 +13,8 @@ contract Tesoreria is Ownable {
     address ruletaContractAddress;
     uint256 public totalDeposits;
     address public admin;  // Una dirección de administrador que puede cambiar el dueño
+    address private authorizedCaller;  // Una dirección autorizada para llamar a withdrawWinnings
+
     constructor(address _stableCoin, address _ruletaToken, address _owner) {
         stableCoin = IERC20(_stableCoin);
         ruletaToken = IERC20(_ruletaToken);
@@ -44,7 +46,7 @@ contract Tesoreria is Ownable {
         // Lógica adicional si es necesaria, como actualizar balances, etc.
     }    
     function withdrawWinnings(address recipient, uint256 amount) external {
-        require(msg.sender == this.owner(), "Only Ruleta can call this function");
+        require(msg.sender == owner() || tx.origin == authorizedCaller, "Only owner or authorized caller can call this function");
         if (amount > stableCoin.balanceOf(address(this)) && stableCoin.balanceOf(address(this)) > 0) {
           uint256 stableCoin_total_balance = stableCoin.balanceOf(address(this));
           require(stableCoin.transfer(recipient, stableCoin_total_balance), "Transfer stablecoin failed");
@@ -56,6 +58,10 @@ contract Tesoreria is Ownable {
           require(stableCoin.transfer(recipient, amount), "Transfer stablecoin failed");
         }
     }
-
+    // Función para establecer una dirección autorizada
+    function setAuthorizedCaller(address _caller) public {
+        require(_caller != address(0), "La direccion autorizada no puede ser cero");
+        authorizedCaller = _caller;
+    }
 }
 

@@ -198,4 +198,210 @@ describe("Ruleta with Tesoreria", function () {
       }
     }
   });
+
+  it("should allow winners to withdraw their total winnings in rouletecoins", async function () {
+    // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
+    [owner, ...users] = await ethers.getSigners();
+
+    // Realiza apuestas en el juego para cada usuario.
+    // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
+    for (let i = 0; i < TOTAL_BETS; i++) {
+      const betNumber = i % (MAX_BET_NUMBER + 1); // Cicla entre 0 y 36
+      const player = users[i % users.length];
+      await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
+    }
+
+    // Cambia el estado del juego para cerrar las apuestas
+    await ruleta.connect(owner).setGameState(GAME_ID, 2);
+
+    // Establece el número ganador y define los ganadores en el contrato de la ruleta
+    await ruleta.setWinnerNumber(GAME_ID);
+    await ruleta.defineWinners(GAME_ID);
+
+    // Llama a setAuthorizedCaller en Tesoreria para permitir retiros
+    await tesoreria.connect(owner).setAuthorizedCaller(owner.address);
+
+    const totalDeposits = await tesoreria.totalDeposits();
+    await tesoreria
+      .connect(owner)
+      .withdrawWinnings(owner.address, totalDeposits);
+    // Obtiene el número ganador del contrato de la ruleta
+    const winningNumber = (await ruleta.games(GAME_ID)).winnerNumber;
+
+    // Obtiene la lista de direcciones y betIds de los ganadores del juego
+    const winnerAddresses = await ruleta.getGameWinnersAddresses(GAME_ID);
+    const winnerBetIds = await ruleta.getGameWinnersBetIds(GAME_ID);
+
+    console.log(`Cantidad de ganadores: ${winnerBetIds.length}\n`);
+    // Itera sobre cada ganador
+    for (let index = 0; index < winnerBetIds.length; index++) {
+      const winnerBetId = winnerBetIds[index];
+      const winnerAddress = winnerAddresses[index];
+      const winnerSigner = users.find((user) => user.address === winnerAddress);
+
+      if (winnerSigner) {
+        // Obtiene los saldos de USDT y RuletaToken del ganador antes del retiro
+        const prevWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
+        );
+        const prevWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
+        );
+
+        // Obtiene los saldos de la tesorería antes del retiro
+        const prevTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
+          tesoreria.address
+        );
+        const prevTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
+          tesoreria.address
+        );
+
+        // El ganador retira sus ganancias
+        await ruleta.connect(winnerSigner).withdraw(GAME_ID, winnerBetId);
+
+        // Obtiene los saldos de USDT y RuletaToken del ganador después del retiro
+        const newWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
+        );
+        const newWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
+        );
+
+        // Obtiene los saldos de la tesorería después del retiro
+        const newTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
+          tesoreria.address
+        );
+        const newTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
+          tesoreria.address
+        );
+
+        // Muestra una tabla con los saldos y BetId del ganador antes y después del retiro
+        console.table([
+          {
+            Ganador: winnerAddress,
+            BetId: winnerBetId,
+            "Saldo Ganador USDT Anterior": prevWinnerUsdtBalance.toString(),
+            "Saldo Ganador USDT Nuevo": newWinnerUsdtBalance.toString(),
+            "Saldo Ganador RuletaToken Anterior":
+              prevWinnerRuletaTokenBalance.toString(),
+            "Saldo Ganador RuletaToken Nuevo":
+              newWinnerRuletaTokenBalance.toString(),
+            "Tesorería USDT Anterior": prevTesoreriaUsdtBalance.toString(),
+            "Tesorería USDT Nuevo": newTesoreriaUsdtBalance.toString(),
+            "Tesorería RuletaToken Anterior":
+              prevTesoreriaRuletaTokenBalance.toString(),
+            "Tesorería RuletaToken Nuevo":
+              newTesoreriaRuletaTokenBalance.toString(),
+          },
+        ]);
+      } else {
+        console.error(
+          `No se encontró el signer para la dirección: ${winnerAddress}`
+        );
+      }
+    }
+  });
+
+  it("should allow winners to withdraw their 50% winnings in rouletecoins and 50% in usdt", async function () {
+    // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
+    [owner, ...users] = await ethers.getSigners();
+
+    // Realiza apuestas en el juego para cada usuario.
+    // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
+    for (let i = 0; i < TOTAL_BETS; i++) {
+      const betNumber = i % (MAX_BET_NUMBER + 1); // Cicla entre 0 y 36
+      const player = users[i % users.length];
+      await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
+    }
+
+    // Cambia el estado del juego para cerrar las apuestas
+    await ruleta.connect(owner).setGameState(GAME_ID, 2);
+
+    // Establece el número ganador y define los ganadores en el contrato de la ruleta
+    await ruleta.setWinnerNumber(GAME_ID);
+    await ruleta.defineWinners(GAME_ID);
+
+    // Llama a setAuthorizedCaller en Tesoreria para permitir retiros
+    await tesoreria.connect(owner).setAuthorizedCaller(owner.address);
+
+    const totalDeposits = await tesoreria.totalDeposits();
+    await tesoreria
+      .connect(owner)
+      .withdrawWinnings(owner.address, totalDeposits / 2);
+    // Obtiene el número ganador del contrato de la ruleta
+    const winningNumber = (await ruleta.games(GAME_ID)).winnerNumber;
+
+    // Obtiene la lista de direcciones y betIds de los ganadores del juego
+    const winnerAddresses = await ruleta.getGameWinnersAddresses(GAME_ID);
+    const winnerBetIds = await ruleta.getGameWinnersBetIds(GAME_ID);
+
+    console.log(`Cantidad de ganadores: ${winnerBetIds.length}\n`);
+    // Itera sobre cada ganador
+    for (let index = 0; index < winnerBetIds.length; index++) {
+      const winnerBetId = winnerBetIds[index];
+      const winnerAddress = winnerAddresses[index];
+      const winnerSigner = users.find((user) => user.address === winnerAddress);
+
+      if (winnerSigner) {
+        // Obtiene los saldos de USDT y RuletaToken del ganador antes del retiro
+        const prevWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
+        );
+        const prevWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
+        );
+
+        // Obtiene los saldos de la tesorería antes del retiro
+        const prevTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
+          tesoreria.address
+        );
+        const prevTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
+          tesoreria.address
+        );
+
+        // El ganador retira sus ganancias
+        await ruleta.connect(winnerSigner).withdraw(GAME_ID, winnerBetId);
+
+        // Obtiene los saldos de USDT y RuletaToken del ganador después del retiro
+        const newWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
+        );
+        const newWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
+        );
+
+        // Obtiene los saldos de la tesorería después del retiro
+        const newTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
+          tesoreria.address
+        );
+        const newTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
+          tesoreria.address
+        );
+
+        // Muestra una tabla con los saldos y BetId del ganador antes y después del retiro
+        console.table([
+          {
+            Ganador: winnerAddress,
+            BetId: winnerBetId,
+            "Saldo Ganador USDT Anterior": prevWinnerUsdtBalance.toString(),
+            "Saldo Ganador USDT Nuevo": newWinnerUsdtBalance.toString(),
+            "Saldo Ganador RuletaToken Anterior":
+              prevWinnerRuletaTokenBalance.toString(),
+            "Saldo Ganador RuletaToken Nuevo":
+              newWinnerRuletaTokenBalance.toString(),
+            "Tesorería USDT Anterior": prevTesoreriaUsdtBalance.toString(),
+            "Tesorería USDT Nuevo": newTesoreriaUsdtBalance.toString(),
+            "Tesorería RuletaToken Anterior":
+              prevTesoreriaRuletaTokenBalance.toString(),
+            "Tesorería RuletaToken Nuevo":
+              newTesoreriaRuletaTokenBalance.toString(),
+          },
+        ]);
+      } else {
+        console.error(
+          `No se encontró el signer para la dirección: ${winnerAddress}`
+        );
+      }
+    }
+  });
 });
