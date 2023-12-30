@@ -71,24 +71,21 @@ describe("Ruleta with Tesoreria", function () {
 
     // Cambia el estado del juego para permitir apuestas
     await ruleta.connect(owner).setGameState(GAME_ID, 1);
+  });
 
+  // Prueba para verificar que las cantidades perdidas se depositan en la Tesorería
+  it("should deposit lost amounts to Tesoreria", async function () {
     // Realiza apuestas en el juego para cada usuario.
     // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
     for (let i = 0; i < TOTAL_BETS; i++) {
       const betNumber = i % (MAX_BET_NUMBER + 1); // Cicla entre 0 y 36
       const player = users[i % users.length];
       await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
-
-      // // El jugador aprueba al contrato Ruleta para gastar sus tokens
-      // await usdtTokenMock.connect(player).approve(ruleta.address, betNumber);
     }
 
     // Cambia el estado del juego para cerrar las apuestas
     await ruleta.connect(owner).setGameState(GAME_ID, 2);
-  });
 
-  // Prueba para verificar que las cantidades perdidas se depositan en la Tesorería
-  it("should deposit lost amounts to Tesoreria", async function () {
     // Establece el número ganador en el contrato de la ruleta
     await ruleta.setWinnerNumber(GAME_ID);
 
@@ -110,6 +107,17 @@ describe("Ruleta with Tesoreria", function () {
     // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
     [owner, ...users] = await ethers.getSigners();
 
+    // Realiza apuestas en el juego para cada usuario.
+    // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
+    for (let i = 0; i < TOTAL_BETS; i++) {
+      const betNumber = i % (MAX_BET_NUMBER + 1); // Cicla entre 0 y 36
+      const player = users[i % users.length];
+      await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
+    }
+
+    // Cambia el estado del juego para cerrar las apuestas
+    await ruleta.connect(owner).setGameState(GAME_ID, 2);
+
     // Establece el número ganador y define los ganadores en el contrato de la ruleta
     await ruleta.setWinnerNumber(GAME_ID);
     await ruleta.defineWinners(GAME_ID);
@@ -117,102 +125,77 @@ describe("Ruleta with Tesoreria", function () {
     // Obtiene el número ganador del contrato de la ruleta
     const winningNumber = (await ruleta.games(GAME_ID)).winnerNumber;
 
-    // Inicializa un array para almacenar las apuestas ganadoras
-    let winningBets = [];
+    // Obtiene la lista de direcciones y betIds de los ganadores del juego
+    const winnerAddresses = await ruleta.getGameWinnersAddresses(GAME_ID);
+    const winnerBetIds = await ruleta.getGameWinnersBetIds(GAME_ID);
 
-    // Bucle para revisar todas las apuestas hechas por los usuarios
-    for (let i = 0; i < TOTAL_BETS; i++) {
-      // Obtiene la apuesta de un usuario basándose en el ID del juego y el índice de la apuesta
-      const bet = await ruleta.connect(users[i]).gameToBetMap(GAME_ID, i);
+    console.log(`Cantidad de ganadores: ${winnerBetIds.length}\n`);
+    // Itera sobre cada ganador
+    for (let index = 0; index < winnerBetIds.length; index++) {
+      const winnerBetId = winnerBetIds[index];
+      const winnerAddress = winnerAddresses[index];
+      const winnerSigner = users.find((user) => user.address === winnerAddress);
 
-      // Verifica si el número de la apuesta coincide con el número ganador
-      if (bet.number === winningNumber) {
-        // Agrega la apuesta ganadora al array de apuestas ganadoras
-        winningBets.push(bet);
+      if (winnerSigner) {
+        // Obtiene los saldos de USDT y RuletaToken del ganador antes del retiro
+        const prevWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
+        );
+        const prevWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
+        );
 
-        // Obtiene los saldos en USDT y tokens de Ruleta de la Tesorería y del jugador antes del retiro
-        const prev_usdt_tesoreriaBalance = await usdtTokenMock.balanceOf(
+        // Obtiene los saldos de la tesorería antes del retiro
+        const prevTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
           tesoreria.address
         );
-        const prev_usdt_Balance = await usdtTokenMock.balanceOf(bet.player);
-        const prev_ruleta_tesoreriaBalance = await ruletaToken.balanceOf(
-          tesoreria.address
-        );
-        const previous_ruleta_Balance = await ruletaToken.balanceOf(bet.player);
-
-        // Realiza el retiro para el jugador ganador
-        await ruleta.connect(users[i]).withdraw(GAME_ID, bet.id);
-
-        // Obtiene los nuevos saldos en USDT y tokens de Ruleta de la Tesorería y del jugador después del retiro
-        const new_usdt_Balance = await usdtTokenMock.balanceOf(bet.player);
-        const post_usdt_tesoreriaBalance = await usdtTokenMock.balanceOf(
-          tesoreria.address
-        );
-        const new_ruleta_Balance = await ruletaToken.balanceOf(bet.player);
-        const post_ruleta_tesoreriaBalance = await ruletaToken.balanceOf(
+        const prevTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
           tesoreria.address
         );
 
-        // Obtiene la lista de ganadores del juego
-        const winners = await ruleta.getGameWinners(GAME_ID);
+        // El ganador retira sus ganancias
+        await ruleta.connect(winnerSigner).withdraw(GAME_ID, winnerBetId);
 
-        console.log(`Total bets: ${TOTAL_BETS}`);
-        // Imprime la cantidad de ganadores y sus direcciones
-        console.log(`Cantidad de Ganadores: ${winners.length}`);
-        console.log("Direcciones de los Ganadores:", winners);
-        // Imprime los saldos antes y después del retiro para verificación
-        console.log(
-          `\n\nWinner USDT Balance - Previous: ${prev_usdt_Balance}, New: ${new_usdt_Balance}`
+        // Obtiene los saldos de USDT y RuletaToken del ganador después del retiro
+        const newWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+          winnerAddress
         );
-        console.log(
-          `Winner Ruleta Token Balance - Previous: ${previous_ruleta_Balance}, New: ${new_ruleta_Balance}`
+        const newWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+          winnerAddress
         );
-        console.log(
-          `USDT Treasury Balance - Previous: ${prev_usdt_tesoreriaBalance}, After: ${post_usdt_tesoreriaBalance}`
+
+        // Obtiene los saldos de la tesorería después del retiro
+        const newTesoreriaUsdtBalance = await usdtTokenMock.balanceOf(
+          tesoreria.address
         );
-        console.log(
-          `Ruleta Token Treasury Balance - Previous: ${prev_ruleta_tesoreriaBalance}, After: ${post_ruleta_tesoreriaBalance}`
+        const newTesoreriaRuletaTokenBalance = await ruletaToken.balanceOf(
+          tesoreria.address
+        );
+
+        // Muestra una tabla con los saldos y BetId del ganador antes y después del retiro
+        console.table([
+          {
+            Ganador: winnerAddress,
+            BetId: winnerBetId,
+            "Saldo Ganador USDT Anterior": prevWinnerUsdtBalance.toString(),
+            "Saldo Ganador USDT Nuevo": newWinnerUsdtBalance.toString(),
+            "Saldo Ganador RuletaToken Anterior":
+              prevWinnerRuletaTokenBalance.toString(),
+            "Saldo Ganador RuletaToken Nuevo":
+              newWinnerRuletaTokenBalance.toString(),
+            "Tesorería USDT Anterior": prevTesoreriaUsdtBalance.toString(),
+            "Tesorería USDT Nuevo": newTesoreriaUsdtBalance.toString(),
+            "Tesorería RuletaToken Anterior":
+              prevTesoreriaRuletaTokenBalance.toString(),
+            "Tesorería RuletaToken Nuevo":
+              newTesoreriaRuletaTokenBalance.toString(),
+          },
+        ]);
+      } else {
+        console.error(
+          `No se encontró el signer para la dirección: ${winnerAddress}`
         );
       }
     }
-    // Comentario para la posible impresión de las apuestas ganadoras
-    // console.log("Winning Bets:", winningBets);
-  });
-
-  it.skip("should allow winners to withdraw their winnings", async () => {
-    [owner, ...users] = await ethers.getSigners();
-
-    await ruleta.setWinnerNumber(GAME_ID);
-    await ruleta.defineWinners(GAME_ID);
-
-    const winningNumber = (await ruleta.games(GAME_ID)).winnerNumber;
-    let winningBets = [];
-
-    for (let i = 0; i < TOTAL_BETS; i++) {
-      const bet = await ruleta.connect(users[i]).gameToBetMap(GAME_ID, i);
-      if (bet.number !== winningNumber) continue;
-
-      const { player: winner, id: betId } = bet;
-
-      const initialUsdtBalance = await usdtTokenMock.balanceOf(winner);
-      const initialRuletaBalance = await ruletaToken.balanceOf(winner);
-
-      await ruleta.connect(users[i]).withdraw(GAME_ID, betId);
-
-      const finalUsdtBalance = await usdtTokenMock.balanceOf(winner);
-      const finalRuletaBalance = await ruletaToken.balanceOf(winner);
-
-      expect(finalUsdtBalance).to.be.gt(
-        initialUsdtBalance,
-        "USDT balance should increase for winner"
-      );
-      expect(finalRuletaBalance).to.be.gt(
-        initialRuletaBalance,
-        "Ruleta token balance should increase for winner"
-      );
-      winningBets.push(bet);
-    }
-
-    expect(winningBets).to.not.be.empty; // Replace with more specific conditions if applicable
   });
 });
