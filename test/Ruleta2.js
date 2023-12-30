@@ -14,7 +14,7 @@ const MAX_BETS = 180;
 async function setupUsers(usdtTokenMock, ruleta, tesoreria, users) {
   for (let index = 0; index < users.length; index++) {
     await usdtTokenMock.transfer(users[index].address, 5000);
-    await usdtTokenMock.connect(users[index]).approve(ruleta.address, 5000);
+    // await usdtTokenMock.connect(users[index]).approve(ruleta.address, 5000);
     await usdtTokenMock.connect(users[index]).approve(tesoreria.address, 5000);
   }
 }
