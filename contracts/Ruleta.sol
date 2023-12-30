@@ -56,7 +56,11 @@ contract Ruleta is Ownable {
         require(token.balanceOf(msg.sender) >= amount, "Saldo insuficiente para apostar");
         require(number >= 0 && number <= 36, "Numero no valido. Debe estar entre 0 y 36");
 
-        token.transferFrom(msg.sender, address(this), amount);
+        // token.transferFrom(msg.sender, address(this), amount);
+        // En lugar de transferir al contrato Ruleta, llama a depositFromPlayer en Tesoreria
+        require(token.approve(tesoreriaContract, amount), "Aprobacion fallida");
+        Tesoreria(tesoreriaContract).depositFromPlayer(msg.sender, amount);
+
 
         uint8 betId = gameIdToBetIdCounterMap[gameId];
         Bet memory newBet = Bet({
@@ -125,10 +129,10 @@ contract Ruleta is Ownable {
         games[gameId].state = GameState.TERMINADO; // Puedes cambiar el estado a TERMINADO aquí si deseas
 
 
-        if (totalLostInBets > 0) {
-            require(token.approve(tesoreriaContract, totalLostInBets), "Aprobacion fallida");
-            Tesoreria(tesoreriaContract).deposit(totalLostInBets);
-        }
+        // if (totalLostInBets > 0) {
+        //     require(token.approve(tesoreriaContract, totalLostInBets), "Aprobacion fallida");
+        //     Tesoreria(tesoreriaContract).deposit(totalLostInBets);
+        // }
     }
 
 function withdraw(uint256 gameId, uint8 betId) public {

@@ -5,16 +5,17 @@ const {
 } = require("@nomicfoundation/hardhat-network-helpers");
 const { expect } = require("chai");
 
-const BET_AMOUNT = 100;
+const BET_AMOUNT = 10;
 const GAME_ID = 0;
 // const TOTAL_BETS = 36; // Assuming 37 bets for simplicity, so loop will be from 0 to 36
 const MIN_BETS = 37;
 const MAX_BETS = 180;
 
-async function setupUsers(usdtTokenMock, ruleta, users) {
+async function setupUsers(usdtTokenMock, ruleta, tesoreria, users) {
   for (let index = 0; index < users.length; index++) {
-    await usdtTokenMock.transfer(users[index].address, 1000);
-    await usdtTokenMock.connect(users[index]).approve(ruleta.address, 1000);
+    await usdtTokenMock.transfer(users[index].address, 5000);
+    await usdtTokenMock.connect(users[index]).approve(ruleta.address, 5000);
+    await usdtTokenMock.connect(users[index]).approve(tesoreria.address, 5000);
   }
 }
 
@@ -55,7 +56,7 @@ describe("Ruleta with Tesoreria", function () {
     const Ruleta = await ethers.getContractFactory("Ruleta");
     ruleta = await Ruleta.deploy(usdtTokenMock.address, tesoreria.address);
     await ruleta.deployed();
-
+    await tesoreria.setRuletaContract(ruleta.address);
     // Transfiere la propiedad del contrato Tesoreria a la dirección del contrato Ruleta
     await tesoreria.connect(owner).transferOwnership(ruleta.address);
 
@@ -66,7 +67,7 @@ describe("Ruleta with Tesoreria", function () {
     await ruleta.connect(owner).createGame();
 
     // Configura los usuarios para las pruebas, dando tokens y aprobación para gastar
-    await setupUsers(usdtTokenMock, ruleta, users);
+    await setupUsers(usdtTokenMock, ruleta, tesoreria, users);
 
     // Cambia el estado del juego para permitir apuestas
     await ruleta.connect(owner).setGameState(GAME_ID, 1);
@@ -75,9 +76,11 @@ describe("Ruleta with Tesoreria", function () {
     // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
     for (let i = 0; i < TOTAL_BETS; i++) {
       const betNumber = i % (MAX_BET_NUMBER + 1); // Cicla entre 0 y 36
-      await ruleta
-        .connect(users[i % users.length])
-        .betInGame(GAME_ID, BET_AMOUNT, betNumber);
+      const player = users[i % users.length];
+      await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
+
+      // // El jugador aprueba al contrato Ruleta para gastar sus tokens
+      // await usdtTokenMock.connect(player).approve(ruleta.address, betNumber);
     }
 
     // Cambia el estado del juego para cerrar las apuestas
