@@ -29,17 +29,11 @@ contract Tesoreria is Ownable {
 
     // Función para cambiar el dueño del contrato. El administrador puede hacerlo.
     function adminChangeOwner(address newOwner) public onlyOwner {
-        require(msg.sender == admin, "Solo el administrador puede cambiar el duenio");
         transferOwnership(newOwner);
     }
 
-    // // Función para depositar tokens de los perdedores
-    // function deposit(uint256 amount) public onlyOwner {
-    //     require(stableCoin.transferFrom(msg.sender, address(this), amount), "Transferencia fallida");
-    //     totalDeposits += amount;
-    // }
     // En el contrato Tesoreria
-    function depositFromPlayer(address player, uint256 amount) external {
+    function depositFromPlayer(address player, uint256 amount) external onlyOwner {
       require(msg.sender == address(ruletaContractAddress), "Solo el contrato Ruleta puede hacer depositos");
       require(stableCoin.transferFrom(player, address(this), amount), "Transferencia fallida");
       totalDeposits += amount;

@@ -52,6 +52,16 @@ describe("Ruleta with Tesoreria", function () {
     );
     await tesoreria.deployed();
 
+    // Despliega el contrato Tesoreria con las direcciones de los tokens USDT y de la ruleta
+    const RedencionDeTokens = await ethers.getContractFactory(
+      "RedencionDeTokens"
+    );
+    redencionDeTokens = await RedencionDeTokens.deploy(
+      usdtTokenMock.address,
+      ruletaToken.address
+    );
+    await redencionDeTokens.deployed();
+
     // Despliega el contrato Ruleta con la dirección del token USDT y del contrato Tesoreria
     const Ruleta = await ethers.getContractFactory("Ruleta");
     ruleta = await Ruleta.deploy(usdtTokenMock.address, tesoreria.address);
@@ -60,9 +70,17 @@ describe("Ruleta with Tesoreria", function () {
     // Transfiere la propiedad del contrato Tesoreria a la dirección del contrato Ruleta
     await tesoreria.connect(owner).transferOwnership(ruleta.address);
 
-    // Transfiere tokens de Ruleta al contrato Tesoreria para simular fondos
+    // Transfiere tokens de usdtTokenMock al contrato Tesoreria para simular fondos
     await ruletaToken.transfer(tesoreria.address, 1000000);
 
+    // Obtener el saldo de usdtTokenMock del contrato RedencionDeTokens
+    const saldo = await usdtTokenMock.balanceOf(redencionDeTokens.address);
+    console.log(
+      `Saldo de usdtTokenMock en RedencionDeTokens: ${ethers.utils.formatUnits(
+        saldo,
+        "mwei"
+      )}`
+    );
     // Crea un nuevo juego en el contrato Ruleta
     await ruleta.connect(owner).createGame();
 
@@ -74,7 +92,7 @@ describe("Ruleta with Tesoreria", function () {
   });
 
   // Prueba para verificar que las cantidades perdidas se depositan en la Tesorería
-  it("should deposit lost amounts to Tesoreria", async function () {
+  it.skip("should deposit lost amounts to Tesoreria", async function () {
     // Realiza apuestas en el juego para cada usuario.
     // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
     for (let i = 0; i < TOTAL_BETS; i++) {
@@ -103,7 +121,7 @@ describe("Ruleta with Tesoreria", function () {
   });
 
   // Prueba para verificar que los ganadores pueden retirar sus ganancias
-  it("should allow winners to withdraw their winnings", async function () {
+  it.skip("should allow winners to withdraw their winnings", async function () {
     // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
     [owner, ...users] = await ethers.getSigners();
 
@@ -199,7 +217,7 @@ describe("Ruleta with Tesoreria", function () {
     }
   });
 
-  it("should allow winners to withdraw their total winnings in rouletecoins", async function () {
+  it.skip("should allow winners to withdraw their total winnings in rouletecoins", async function () {
     // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
     [owner, ...users] = await ethers.getSigners();
 
@@ -302,9 +320,16 @@ describe("Ruleta with Tesoreria", function () {
     }
   });
 
-  it("should allow winners to withdraw their 50% winnings in rouletecoins and 50% in usdt", async function () {
+  it.skip("should allow winners to withdraw their 50% winnings in rouletecoins and 50% in usdt", async function () {
     // Obtiene los firmantes (owner y usuarios) para interactuar con los contratos
     [owner, ...users] = await ethers.getSigners();
+
+    // Transfiere tokens de Ruleta al contrato redencionDeTokens para simular fondos
+    // Transfiere 5000 tokens de usdtTokenMock al contrato Tesoreria para simular fondos
+    await usdtTokenMock.transfer(
+      redencionDeTokens.address,
+      ethers.utils.parseUnits("5000", "mwei")
+    );
 
     // Realiza apuestas en el juego para cada usuario.
     // Cada usuario apuesta en un número que va ciclando entre 0 y 36.
@@ -397,6 +422,50 @@ describe("Ruleta with Tesoreria", function () {
               newTesoreriaRuletaTokenBalance.toString(),
           },
         ]);
+
+        // Verifica si el ganador tiene RuletaTokens para redimir
+        if (newWinnerRuletaTokenBalance.gt(0)) {
+          // Obtener el saldo de usdtTokenMock del contrato RedencionDeTokens
+          console.log("hola");
+          console.log(
+            "redencionTokenAddress: ",
+            redencionDeTokens.address,
+            " usdtMockAddress: ",
+            usdtTokenMock.address
+          );
+          console.log("chau");
+          const saldo = await usdtTokenMock.balanceOf(
+            redencionDeTokens.address
+          );
+          console.log(
+            `Saldo de usdtTokenMock en RedencionDeTokens: ${ethers.utils.formatUnits(
+              saldo,
+              "mwei"
+            )}`
+          );
+          // El ganador redime sus RuletaTokens
+          await redencionDeTokens
+            .connect(winnerSigner)
+            .redimirRuletaTokens(newWinnerRuletaTokenBalance);
+
+          // Obtiene los saldos de USDT y RuletaToken del ganador después de la redención
+          const finalWinnerUsdtBalance = await usdtTokenMock.balanceOf(
+            winnerAddress
+          );
+          const finalWinnerRuletaTokenBalance = await ruletaToken.balanceOf(
+            winnerAddress
+          );
+
+          // Muestra una tabla con los saldos del ganador después de la redención
+          console.table([
+            {
+              Ganador: winnerAddress,
+              "Saldo Final USDT": finalWinnerUsdtBalance.toString(),
+              "Saldo Final RuletaToken":
+                finalWinnerRuletaTokenBalance.toString(),
+            },
+          ]);
+        }
       } else {
         console.error(
           `No se encontró el signer para la dirección: ${winnerAddress}`
