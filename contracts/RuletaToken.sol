@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract RuletaToken is ERC20, Ownable {
   // using SafeERC20 for ERC20;
-  constructor() ERC20("Ruleta Token", "RULETA") {
+  constructor() ERC20("Roulette Bond Token", "RBT") {
     _mint(msg.sender, 1000000 * 1E6);
   }
 

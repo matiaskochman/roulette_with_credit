@@ -74,7 +74,7 @@ describe("Ruleta with Tesoreria", function () {
     await ruletaToken.transfer(tesoreria.address, 1000000);
 
     // Crea un nuevo juego en el contrato Ruleta
-    await ruleta.connect(owner).createGame();
+    await ruleta.connect(owner).createGame(100);
 
     // Configura los usuarios para las pruebas, dando tokens y aprobación para gastar
     await setupUsers(usdtTokenMock, ruleta, tesoreria, users);

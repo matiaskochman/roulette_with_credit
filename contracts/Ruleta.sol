@@ -26,6 +26,7 @@ contract Ruleta is Ownable {
         uint8 winnerNumber;
         address[] winnersAddresses;
         uint8[] winnersBetIds;
+        uint8 numberOfChances;
     }
     uint256 public earnings;
     uint256 private currentGameId = 0;
@@ -39,13 +40,14 @@ contract Ruleta is Ownable {
         tesoreriaContract = _tesoreriaContract;
     }
 
-    function createGame() public {
+    function createGame(uint8 _numberOfChances) public {
         Game memory newGame = Game({
             id: currentGameId,
             state: GameState.CREADO,
             winnerNumber: 0,
             winnersAddresses: new address[](0),
-            winnersBetIds: new uint8[](0)
+            winnersBetIds: new uint8[](0),
+            numberOfChances: _numberOfChances
         });
 
         games[currentGameId] = newGame;
@@ -91,7 +93,7 @@ contract Ruleta is Ownable {
         require(totalBets > 0, "No hay apuestas para este juego");
         
         // Generate a random number between 0 and 36
-        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % ruletaTop);
+        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % games[gameId].numberOfChances);
         
         games[gameId].winnerNumber = winnerNumber;
         games[gameId].state = GameState.RESULTADO_OBTENIDO;
@@ -113,7 +115,7 @@ contract Ruleta is Ownable {
             Bet storage bet = game_to_bet_map[gameId][i];
             if (bet.number == winnerNumber) {
                 bet.isWinner = true;
-                bet.winnings = bet.amount * 36; // Establecer las ganancias de esta apuesta
+                bet.winnings = bet.amount * games[gameId].numberOfChances; // Establecer las ganancias de esta apuesta
                 // console.log("winnings: ", bet.winnings, "betId: ", i);
                 totalWonInBets += bet.winnings;
                 _winnersAddresses[winnerCount] = bet.player; // Agregar el ganador al array
