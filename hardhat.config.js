@@ -6,7 +6,7 @@ module.exports = {
   networks: {
     hardhat: {
       accounts: {
-        // Crear 40 cuentas
+        // Crear 180 cuentas
         count: 180,
         // Puedes configurar más campos como initialIndex, path, etc.
       },

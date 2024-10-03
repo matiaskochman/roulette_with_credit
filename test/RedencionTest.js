@@ -22,17 +22,19 @@ async function setupUsers(usdtTokenMock, ruleta, tesoreria, users) {
 describe("Ruleta with Tesoreria", function () {
   let usdtTokenMock, ruleta, tesoreria, TOTAL_BETS;
   let owner, users;
-  const MAX_BET_NUMBER = 36;
+  // const MAX_BET_NUMBER = 36;
+  const MAX_BET_NUMBER = 1;
+  const NUMBER_OF_CHANCES = MAX_BET_NUMBER + 1;
 
   beforeEach(async function () {
     // Obtiene las direcciones de los signatarios (owner y usuarios) de la blockchain de prueba
     [owner, ...users] = await ethers.getSigners();
-
     // Genera un número aleatorio para TOTAL_BETS entre 37 y 80.
     // Esto determina cuántas apuestas se realizarán en total en la prueba.
     TOTAL_BETS =
       Math.floor(Math.random() * (MAX_BETS - MIN_BETS + 1)) + MIN_BETS;
 
+    console.log(`amount of bets: ${TOTAL_BETS}`);
     // Implementa el mock de token USDT para usarlo en las pruebas
     const UsdtTokenMock = await ethers.getContractFactory("UsdtTokenMock");
     usdtTokenMock = await UsdtTokenMock.deploy();
@@ -42,7 +44,6 @@ describe("Ruleta with Tesoreria", function () {
     const RuletaToken = await ethers.getContractFactory("RuletaToken");
     ruletaToken = await RuletaToken.deploy(); // Aquí parece que deberías usar RuletaToken.deploy()
     await ruletaToken.deployed();
-
     // Despliega el contrato Tesoreria con las direcciones de los tokens USDT y de la ruleta
     const Tesoreria = await ethers.getContractFactory("Tesoreria");
     tesoreria = await Tesoreria.deploy(
@@ -51,7 +52,6 @@ describe("Ruleta with Tesoreria", function () {
       owner.address
     );
     await tesoreria.deployed();
-
     // Despliega el contrato Tesoreria con las direcciones de los tokens USDT y de la ruleta
     const RedencionDeTokens = await ethers.getContractFactory(
       "RedencionDeTokens"
@@ -74,8 +74,7 @@ describe("Ruleta with Tesoreria", function () {
     await ruletaToken.transfer(tesoreria.address, 1000000);
 
     // Crea un nuevo juego en el contrato Ruleta
-    await ruleta.connect(owner).createGame(100);
-
+    await ruleta.connect(owner).createGame(NUMBER_OF_CHANCES);
     // Configura los usuarios para las pruebas, dando tokens y aprobación para gastar
     await setupUsers(usdtTokenMock, ruleta, tesoreria, users);
 
@@ -103,7 +102,6 @@ describe("Ruleta with Tesoreria", function () {
       const player = users[i % users.length];
       await ruleta.connect(player).betInGame(GAME_ID, BET_AMOUNT, betNumber);
     }
-
     // Cambia el estado del juego para cerrar las apuestas
     await ruleta.connect(owner).setGameState(GAME_ID, 2);
 
@@ -120,7 +118,6 @@ describe("Ruleta with Tesoreria", function () {
       .withdrawWinnings(owner.address, totalDeposits / 2);
     // Obtiene el número ganador del contrato de la ruleta
     const winningNumber = (await ruleta.games(GAME_ID)).winnerNumber;
-
     // Obtiene la lista de direcciones y betIds de los ganadores del juego
     const winnerAddresses = await ruleta.getGameWinnersAddresses(GAME_ID);
     const winnerBetIds = await ruleta.getGameWinnersBetIds(GAME_ID);

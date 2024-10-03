@@ -1,45 +1,119 @@
-# Paso 1: Preparación del Juego
+Smart Contract-Based Roulette Game README
 
-# #Despliegue de Contratos:
+This document explains the functionality of the smart contracts involved in the roulette game. It is intended for users who will interact with the contracts but did not program them and will not change their programming.
 
-Despliega los contratos Tesoreria, Ruleta, y los tokens (por ejemplo, UsdtTokenMock y RuletaToken).
-Inicialización y Configuración:
+Step 1: Game Preparation
 
-Transfiere los tokens necesarios al contrato Tesoreria.
-Crea un juego en el contrato Ruleta mediante createGame().
+Contract Deployment
 
-# Paso 2: Participación del Jugador
+- Deploy the following contracts:
+  - Tesoreria
+  - Ruleta
+  - UsdtTokenMock
+  - RuletaToken
 
-# #Registro y Aprobación de Tokens:
+Initialization and Configuration
 
-El jugador recibe tokens (por ejemplo, USDT) y aprueba al contrato Ruleta para gastar una cierta cantidad de sus tokens.
-Hacer una Apuesta:
+- Transfer the necessary tokens to the Tesoreria contract.
+- Create a game in the Ruleta contract using the createGame() function.
 
-El jugador llama a betInGame() en el contrato Ruleta, especificando el ID del juego, la cantidad de la apuesta y el número elegido.
+Step 2: Player Participation
 
-# Paso 3: Manejo del Juego por el Owner
+Token Registration and Approval
 
-# #Cierre de Apuestas:
+- Players receive tokens (e.g., USDT).
+- Players approve the Tesoreria contract to spend a specified amount of their tokens using the approve() function.
 
-El administrador del contrato (owner) cambia el estado del juego a NO_SE_PERMITEN_APUESTAS usando setGameState().
-Selección del Número Ganador:
+Placing a Bet
 
-El owner ejecuta setWinnerNumber() para determinar aleatoriamente el número ganador del juego.
-Determinación de Ganadores:
+- Players place their bets by calling the betInGame() function on the Ruleta contract.
+- Players must specify the game ID, the bet amount, and the chosen number.
 
-El owner llama a defineWinners() para procesar todas las apuestas, determinar los ganadores y calcular las ganancias.
+Step 3: Game Management by the Owner
 
-# Paso 4: Retiro de Ganancias
+Closing Bets
 
-# #Retiro por los Ganadores:
+- The contract owner changes the game state to "NO_BETS_ALLOWED" using the setGameState() function.
 
-Los jugadores que ganaron (sus apuestas coinciden con el número ganador) pueden llamar a withdraw() para retirar sus ganancias del contrato Tesoreria.
-Transferencia de Ganancias:
+Selecting the Winning Number
 
-El contrato Tesoreria procesa el retiro y transfiere las ganancias al jugador, ya sea en tokens USDT o en tokens de ruleta, dependiendo de los fondos disponibles.
-Consideraciones Adicionales
-Seguridad y RNG: Es crucial utilizar un método seguro y justo para generar el número ganador, como Chainlink VRF, para evitar manipulaciones y asegurar la aleatoriedad.
-Testing: Antes de poner en producción, realiza pruebas exhaustivas para asegurar que todas las funciones se comporten como se espera y manejen correctamente situaciones como fondos insuficientes, apuestas inválidas, etc.
-Optimización de Gas: Considera la eficiencia en el uso del gas al diseñar las funciones y al manejar múltiples transacciones o interacciones con los contratos.
-Manejo de Excepciones: Asegúrate de que tu contrato maneje adecuadamente situaciones excepcionales, como apuestas después de cerrar el juego, retiros de no ganadores, etc.
-Siguiendo estos pasos, podrás simular un flujo de juego en el que los jugadores pueden participar, apostar, y potencialmente ganar en tu juego de ruleta basado en contratos inteligentes.
+- The owner determines the winning number randomly by executing the setWinnerNumber() function.
+
+Determining Winners
+
+- The owner processes all bets and calculates winnings by calling the defineWinners() function.
+
+Step 4: Withdrawal of Winnings
+
+Withdrawal by Winners
+
+- Winning players (those whose bets match the winning number) call the withdraw() function to withdraw their winnings from the Tesoreria contract.
+
+Transfer of Winnings
+
+- The Tesoreria contract processes the withdrawals and transfers the winnings to the players.
+- Winnings are transferred either in USDT tokens or in RouletteTokens, depending on the available funds.
+
+Explanation of RouletteToken
+
+Purpose of RouletteToken
+
+RouletteToken serves as a type of voucher within the smart contract-based roulette game. It is used when the game runs out of USDT to pay out winnings. Players can later redeem these tokens for USDT once the game has accumulated enough USDT to exchange them.
+
+How RouletteToken Works
+
+RouletteToken operates as an ERC-20 token, a standard for fungible tokens on the Ethereum blockchain. Here’s a breakdown of how it functions within the game:
+
+1. Deployment:
+
+   - The RouletteToken contract is deployed, creating a fixed supply of tokens that can be distributed and managed within the game ecosystem.
+
+2. Issuing RouletteTokens:
+
+   - When the game runs out of USDT to pay winnings, it issues RouletteTokens to the players as a form of IOU (I Owe You). These tokens represent a promise that the players will receive an equivalent amount of USDT when it becomes available.
+
+3. Redemption Process:
+   - Players can redeem their RouletteTokens for USDT through the Tesoreria contract once the game has accumulated enough USDT from subsequent bets and losses.
+
+Example Usage
+
+Here’s a step-by-step example of how a player might interact with RouletteToken:
+
+1. Winning RouletteTokens:
+
+   - The player wins a game of roulette, but the game’s treasury (Tesoreria) is low on USDT.
+   - Instead of paying the player in USDT, the game issues 1000 RouletteTokens to the player’s wallet.
+
+2. Waiting for Funds:
+
+   - The game continues to operate, collecting USDT from losing bets.
+
+3. Redeeming RouletteTokens:
+   - Once the Tesoreria has accumulated enough USDT, the player can redeem their RouletteTokens.
+   - The player approves the Tesoreria contract to spend their RouletteTokens:
+     await rouletteToken.approve(tesoreria.address, 1000);
+   - The player calls the redemption function to exchange their RouletteTokens for USDT:
+     await tesoreria.redeemRouletteTokens(1000);
+   - The Tesoreria contract processes the redemption and transfers the equivalent amount of USDT to the player’s wallet.
+
+Additional Considerations
+
+Security and RNG
+
+- Ensure the use of a secure and fair method to generate the winning number, such as Chainlink VRF, to avoid manipulation and ensure randomness.
+
+Testing
+
+- Before going to production, perform thorough testing to ensure all functions behave as expected and handle situations like insufficient funds, invalid bets, etc., correctly.
+
+Gas Optimization
+
+- Consider gas efficiency when designing functions and handling multiple transactions or interactions with the contracts.
+
+Exception Handling
+
+- Ensure your contract adequately handles exceptional situations, such as:
+  - Bets placed after the game is closed.
+  - Withdrawals attempted by non-winners.
+
+By following these steps, players can participate, place bets, and potentially win in your smart contract-based roulette game.
