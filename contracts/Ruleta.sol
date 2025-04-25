@@ -1,175 +1,195 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// File: contracts/Ruleta.sol
+pragma solidity ^0.8.17; // Standardize version
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "hardhat/console.sol";
+import "hardhat/console.sol"; // Remove before production
 import { Tesoreria } from './Tesoreria.sol';
-contract Ruleta is Ownable {
-    IERC20 private token;
-    uint8 ruletaTop = 37;
-    enum GameState { CREADO, SE_PERMITEN_APUESTAS, NO_SE_PERMITEN_APUESTAS, RESULTADO_OBTENIDO, TERMINADO }
 
+contract Ruleta is Ownable {
+    IERC20 private usdtToken; // Renamed for clarity
+    Tesoreria private tesoreria; // Use the contract type
+
+    // Use uint256 for IDs and counts to prevent overflow
     struct Bet {
         uint256 id;
         address player;
         uint256 amount;
-        uint8 number;
-        bool isWinner;      // New field to indicate if this bet is a winner
-        uint256 winnings;   // New field to store the winnings for this bet
+        uint8 number; // Roulette number (0-36) is fine as uint8
+        bool isWinner;
+        uint256 winnings;
     }
 
+    enum GameState { CREADO, SE_PERMITEN_APUESTAS, NO_SE_PERMITEN_APUESTAS, RESULTADO_OBTENIDO, TERMINADO }
 
     struct Game {
         uint256 id;
         GameState state;
-        uint8 winnerNumber;
+        uint8 winnerNumber; // Roulette number (0-36) is fine as uint8
         address[] winnersAddresses;
-        uint8[] winnersBetIds;
-        uint8 numberOfChances;
+        uint256[] winnersBetIds; // Changed to uint256
+        uint8 numberOfChances; // Max number + 1 (e.g., 37 for 0-36)
     }
-    uint256 public earnings;
+
     uint256 private currentGameId = 0;
     mapping(uint256 => Game) public games;
-    mapping(uint256 => uint8) public gameId_to_bet_counter_map;
-    mapping(uint256 => mapping(uint8 => Bet)) public game_to_bet_map;
-    address public tesoreriaContract;
+    // Use uint256 for the counter to avoid overflow
+    mapping(uint256 => uint256) public gameId_to_bet_counter_map;
+    // Use uint256 for the bet ID mapping key
+    mapping(uint256 => mapping(uint256 => Bet)) public game_to_bet_map;
 
-    constructor(address _token, address _tesoreriaContract) {
-        token = IERC20(_token);
-        tesoreriaContract = _tesoreriaContract;
+    // Event Placeholders
+    event GameCreated(uint256 indexed gameId, uint8 numberOfChances);
+    event GameStateChanged(uint256 indexed gameId, GameState newState);
+    event BetPlaced(uint256 indexed gameId, uint256 indexed betId, address indexed player, uint256 amount, uint8 number);
+    event WinnerNumberSet(uint256 indexed gameId, uint8 winnerNumber);
+    event WinnersDefined(uint256 indexed gameId, uint256 winnerCount);
+    event WinningsWithdrawn(uint256 indexed gameId, uint256 indexed betId, address indexed player, uint256 amount);
+
+    constructor(address _usdtToken, address _tesoreriaContract) {
+        require(_usdtToken != address(0), "USDT address cannot be zero");
+        require(_tesoreriaContract != address(0), "Tesoreria address cannot be zero");
+        usdtToken = IERC20(_usdtToken);
+        tesoreria = Tesoreria(_tesoreriaContract); // Store as contract type
     }
 
-    function createGame(uint8 _numberOfChances) public {
+    function createGame(uint8 _numberOfChances) public onlyOwner {
+        require(_numberOfChances > 1 && _numberOfChances <= 37, "Number of chances must be > 1 and <= 37"); // Basic validation
         Game memory newGame = Game({
             id: currentGameId,
             state: GameState.CREADO,
-            winnerNumber: 0,
+            winnerNumber: 0, // Or an invalid number like type(uint8).max
             winnersAddresses: new address[](0),
-            winnersBetIds: new uint8[](0),
+            winnersBetIds: new uint256[](0), // Use uint256
             numberOfChances: _numberOfChances
         });
-
         games[currentGameId] = newGame;
-        gameId_to_bet_counter_map[currentGameId] = 0;
+        // gameId_to_bet_counter_map defaults to 0
+        emit GameCreated(currentGameId, _numberOfChances);
         currentGameId++;
     }
 
     function betInGame(uint256 gameId, uint256 amount, uint8 number) public {
-        require(games[gameId].state == GameState.SE_PERMITEN_APUESTAS, "Las apuestas no estan permitidas para este juego en este momento");
-        require(token.balanceOf(msg.sender) >= amount, "Saldo insuficiente para apostar");
-        require(number >= 0 && number <= 36, "Numero no valido. Debe estar entre 0 y 36");
+        Game storage currentGame = games[gameId]; // Gas optimization: Load game to storage
+        require(currentGame.state == GameState.SE_PERMITEN_APUESTAS, "Betting not allowed in current state");
+        require(amount > 0, "Bet amount must be positive");
+        require(usdtToken.balanceOf(msg.sender) >= amount, "Insufficient USDT balance");
+        require(number < currentGame.numberOfChances, "Invalid number for this game"); // Check against game's chances
 
-        // token.transferFrom(msg.sender, address(this), amount);
-        // En lugar de transferir al contrato Ruleta, llama a depositFromPlayer en Tesoreria
-        require(token.approve(tesoreriaContract, amount), "Aprobacion fallida");
-        Tesoreria(tesoreriaContract).depositFromPlayer(msg.sender, amount);
+        // Player MUST have approved Tesoreria contract beforehand
+        tesoreria.depositFromPlayer(msg.sender, amount); // Call the Tesoreria contract
 
+        uint256 currentBetCount = gameId_to_bet_counter_map[gameId]; // Use uint256
 
-        uint8 betId = gameId_to_bet_counter_map[gameId];
-        Bet memory newBet = Bet({
-            id: betId,
-            player: msg.sender,
-            amount: amount,
-            number: number,
-            isWinner: false,  // Initialize as false
-            winnings: 0       // Initialize with 0 winnings
-        });
+        Bet storage newBet = game_to_bet_map[gameId][currentBetCount]; // Use storage pointer for gas saving
+        newBet.id = currentBetCount; // Use uint256
+        newBet.player = msg.sender;
+        newBet.amount = amount;
+        newBet.number = number;
+        newBet.isWinner = false;
+        newBet.winnings = 0;
 
-        game_to_bet_map[gameId][betId] = newBet;
-        gameId_to_bet_counter_map[gameId]++;
+        gameId_to_bet_counter_map[gameId]++; // Increment counter
+
+        emit BetPlaced(gameId, currentBetCount, msg.sender, amount, number);
     }
 
     function setGameState(uint256 gameId, GameState newState) public onlyOwner {
+        // Add checks for valid state transitions if necessary
         games[gameId].state = newState;
+        emit GameStateChanged(gameId, newState);
     }
 
+    // SECURE RANDOMNESS (using Chainlink VRF) IS HIGHLY RECOMMENDED HERE
+    // This implementation remains insecure for demonstration purposes based on original code.
     function setWinnerNumber(uint256 gameId) public onlyOwner {
-        require(games[gameId].state == GameState.NO_SE_PERMITEN_APUESTAS, "El juego debe estar en estado 'NO_SE_PERMITEN_APUESTAS' para seleccionar un numero ganador");
-        
-        uint8 totalBets = gameId_to_bet_counter_map[gameId];
-        
-        // Asegurarse de que hay apuestas antes de intentar seleccionar un ganador
-        require(totalBets > 0, "No hay apuestas para este juego");
-        
-        // Generate a random number between 0 and 36
-        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender))) % games[gameId].numberOfChances);
-        
-        games[gameId].winnerNumber = winnerNumber;
-        games[gameId].state = GameState.RESULTADO_OBTENIDO;
-        
+        Game storage currentGame = games[gameId]; // Gas optimization
+        require(currentGame.state == GameState.NO_SE_PERMITEN_APUESTAS, "Game must be in NO_SE_PERMITEN_APUESTAS state");
+        uint256 totalBets = gameId_to_bet_counter_map[gameId];
+        require(totalBets > 0, "No bets placed in this game");
+
+        // !!! INSECURE RANDOMNESS - REPLACE WITH VRF OR COMMIT/REVEAL !!!
+        uint8 winnerNumber = uint8(uint256(keccak256(abi.encodePacked(block.timestamp, block.difficulty, msg.sender, gameId, totalBets))) % currentGame.numberOfChances);
+        // !!! END INSECURE RANDOMNESS !!!
+
+        currentGame.winnerNumber = winnerNumber;
+        currentGame.state = GameState.RESULTADO_OBTENIDO;
+        emit WinnerNumberSet(gameId, winnerNumber);
     }
 
+    // Consider gas implications for large number of bets
     function defineWinners(uint256 gameId) public onlyOwner {
-        require(games[gameId].state == GameState.RESULTADO_OBTENIDO, "El juego debe estar en estado 'RESULTADO_OBTENIDO' para definir ganadores");
+        Game storage currentGame = games[gameId]; // Gas optimization
+        require(currentGame.state == GameState.RESULTADO_OBTENIDO, "Game must be in RESULTADO_OBTENIDO state");
 
-        uint8 totalBets = gameId_to_bet_counter_map[gameId];
-        uint8 winnerNumber = games[gameId].winnerNumber;
-        address[] memory _winnersAddresses = new address[](totalBets); // tamaño máximo posible
-        uint8[] memory _winnersBetIds = new uint8[](totalBets); // tamaño máximo posible
+        uint256 totalBets = gameId_to_bet_counter_map[gameId];
+        uint8 winnerNumber = currentGame.winnerNumber;
+
+        address[] memory tempWinnerAddresses = new address[](totalBets); // Max possible size
+        uint256[] memory tempWinnerBetIds = new uint256[](totalBets); // Max possible size, uint256
         uint256 winnerCount = 0;
-        uint256 totalLostInBets = 0;
-        uint256 totalWonInBets = 0;
 
-        for (uint8 i = 0; i < totalBets; i++) {
+        for (uint256 i = 0; i < totalBets; i++) { // Use uint256
             Bet storage bet = game_to_bet_map[gameId][i];
-            if (bet.number == winnerNumber) {
+            if (bet.player != address(0) && bet.number == winnerNumber) { // Check player exists (not default)
                 bet.isWinner = true;
-                bet.winnings = bet.amount * games[gameId].numberOfChances; // Establecer las ganancias de esta apuesta
-                // console.log("winnings: ", bet.winnings, "betId: ", i);
-                totalWonInBets += bet.winnings;
-                _winnersAddresses[winnerCount] = bet.player; // Agregar el ganador al array
-                _winnersBetIds[winnerCount] = i;
+                // Potential overflow if amount * numberOfChances > type(uint256).max (unlikely but possible)
+                bet.winnings = bet.amount * currentGame.numberOfChances;
+                tempWinnerAddresses[winnerCount] = bet.player;
+                tempWinnerBetIds[winnerCount] = i; // betId is the loop index
                 winnerCount++;
-            } else {
-                totalLostInBets += bet.amount;
             }
+            // No need to track losers explicitly unless needed for house profit calculation
         }
 
-        // Redimensionar el array a la cantidad real de ganadores
+        // Resize arrays to actual winner count
         address[] memory actualWinnersList = new address[](winnerCount);
-        uint8[] memory actualWinnerBetIds = new uint8[](winnerCount);
-        for (uint256 i = 0; i < winnerCount; i++) {
-            actualWinnersList[i] = _winnersAddresses[i];
-            actualWinnerBetIds[i] = _winnersBetIds[i];
+        uint256[] memory actualWinnerBetIds = new uint256[](winnerCount); // Use uint256
+        for (uint256 i = 0; i < winnerCount; i++) { // Use uint256
+            actualWinnersList[i] = tempWinnerAddresses[i];
+            actualWinnerBetIds[i] = tempWinnerBetIds[i];
         }
 
-        games[gameId].winnersAddresses = actualWinnersList;
-        games[gameId].winnersBetIds = actualWinnerBetIds;
-        games[gameId].state = GameState.TERMINADO; // Puedes cambiar el estado a TERMINADO aquí si deseas
-
+        currentGame.winnersAddresses = actualWinnersList;
+        currentGame.winnersBetIds = actualWinnerBetIds;
+        currentGame.state = GameState.TERMINADO;
+        emit WinnersDefined(gameId, winnerCount);
     }
 
-function withdraw(uint256 gameId, uint8 betId) public {
-    require(games[gameId].state == GameState.TERMINADO, "El juego debe estar en estado 'RESULTADO_OBTENIDO' para retirar las ganancias");
+    function withdraw(uint256 gameId, uint256 betId) public { // Use uint256 for betId
+        require(games[gameId].state == GameState.TERMINADO, "Withdrawals only allowed when game is TERMINADO");
+        Bet storage bet = game_to_bet_map[gameId][betId];
 
-    Bet storage bet = game_to_bet_map[gameId][betId];
+        require(bet.player == msg.sender, "Bet does not belong to caller");
+        require(bet.isWinner, "Bet is not a winner");
+        require(bet.winnings > 0, "No winnings available or already withdrawn");
 
-    // Ensure that the bet belongs to the caller
-    require(bet.player == msg.sender, "Esta apuesta no te pertenece");
-    
-    // Ensure that it was a winning bet and has positive winnings
-    require(bet.isWinner, "No ganaste con esta apuesta");
-    console.log("withdraw winnings: ", bet.winnings, " betid: ", betId);
-    require(bet.winnings > 0, "No tienes ganancias para retirar o ya las has retirado");
+        uint256 winningsToWithdraw = bet.winnings;
+        bet.winnings = 0; // Prevent re-entrancy / double withdrawal - set to 0 BEFORE external call
 
-    uint256 winnings = bet.winnings; // Get the winnings for this specific bet
+        // Call Tesoreria to handle the actual token transfer
+        tesoreria.withdrawWinnings(msg.sender, winningsToWithdraw);
+        emit WinningsWithdrawn(gameId, betId, msg.sender, winningsToWithdraw);
+    }
 
-    // Reset the bet winnings to prevent reentrancy
-    bet.winnings = 0;
+    // --- View Functions ---
+    function getGame(uint256 gameId) external view returns (Game memory) {
+        return games[gameId];
+    }
 
-    // Transfer the winnings from Tesoreria to the player
-    Tesoreria(tesoreriaContract).withdrawWinnings(msg.sender, winnings);
-    // // Transfer the winnings to the player
-    // require(token.transfer(msg.sender, winnings), "Transfer failed");
-}
-
+     function getBet(uint256 gameId, uint256 betId) external view returns (Bet memory) { // Use uint256
+        return game_to_bet_map[gameId][betId];
+    }
 
     function getGameWinnersAddresses(uint256 gameId) public view returns(address[] memory) {
         return games[gameId].winnersAddresses;
     }
-    function getGameWinnersBetIds(uint256 gameId) public view returns(uint8[] memory) {
+
+    function getGameWinnersBetIds(uint256 gameId) public view returns(uint256[] memory) { // Use uint256
         return games[gameId].winnersBetIds;
     }
 
+    function getBetCount(uint256 gameId) public view returns (uint256) {
+        return gameId_to_bet_counter_map[gameId];
+    }
 }

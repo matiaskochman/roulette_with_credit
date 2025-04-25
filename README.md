@@ -26,6 +26,7 @@ Token Registration and Approval
 
 Placing a Bet
 
+- the player must first call usdtToken.approve(tesoreria.address, amount) before calling ruleta.betInGame(...)
 - Players place their bets by calling the betInGame() function on the Ruleta contract.
 - Players must specify the game ID, the bet amount, and the chosen number.
 

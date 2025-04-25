@@ -1,61 +1,112 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// File: contracts/Tesoreria.sol
+pragma solidity ^0.8.17; // Standardize version
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./Ruleta.sol";
+// Removed Ruleta import as it's not directly needed for types here, only for address logic
 import "hardhat/console.sol";
 
-contract Tesoreria is Ownable {
+contract Tesoreria is Ownable { // Inherit Ownable
     IERC20 private stableCoin;
     IERC20 private ruletaToken;
-    Ruleta ruletaContract;
-    address ruletaContractAddress;
+    address public ruletaContractAddress; // Keep track of Ruleta contract
     uint256 public totalDeposits;
-    address public admin;  // Una dirección de administrador que puede cambiar el dueño
-    address private authorizedCaller;  // Una dirección autorizada para llamar a withdrawWinnings
 
-    constructor(address _stableCoin, address _ruletaToken, address _owner) {
+    // Event Placeholders
+    event DepositReceived(address indexed player, uint256 amount);
+    event WinningsPaid(address indexed recipient, uint256 usdtAmount, uint256 ruletaTokenAmount);
+    event HouseProfitWithdrawn(address indexed recipient, uint256 usdtAmount, uint256 ruletaTokenAmount);
+    event RuletaContractSet(address indexed ruletaAddress);
+
+    // Constructor - Deployer automatically becomes the owner
+    constructor(address _stableCoin, address _ruletaToken) {
+        require(_stableCoin != address(0), "Stablecoin address cannot be zero");
+        require(_ruletaToken != address(0), "RuletaToken address cannot be zero");
         stableCoin = IERC20(_stableCoin);
         ruletaToken = IERC20(_ruletaToken);
-        transferOwnership(_owner);  // Configura el dueño del contrato
     }
-    // Función para establecer la dirección del contrato Ruleta asociado.
-    // Se ha añadido visibilidad `public` y se asegura que solo el dueño pueda llamarla.
+
+    // Allow the current owner (deployer) to set the Ruleta contract address ONCE
     function setRuletaContract(address _ruletaContractAddress) public onlyOwner {
-        require(_ruletaContractAddress != address(0), "La direccion del contrato Ruleta no puede ser cero");
+        require(_ruletaContractAddress != address(0), "Ruleta address cannot be zero");
+        require(ruletaContractAddress == address(0), "Ruleta address already set"); // Prevent changing it
         ruletaContractAddress = _ruletaContractAddress;
+        emit RuletaContractSet(_ruletaContractAddress);
     }
 
-    // Función para cambiar el dueño del contrato. El administrador puede hacerlo.
-    function adminChangeOwner(address newOwner) public onlyOwner {
-        transferOwnership(newOwner);
+    // Modifier to restrict calls only to the set Ruleta contract
+    modifier onlyRuletaContract() {
+        require(msg.sender == ruletaContractAddress, "Only the Ruleta contract can call this function");
+        _;
     }
 
-    // En el contrato Tesoreria
-    function depositFromPlayer(address player, uint256 amount) external onlyOwner {
-      require(msg.sender == address(ruletaContractAddress), "Solo el contrato Ruleta puede hacer depositos");
-      require(stableCoin.transferFrom(player, address(this), amount), "Transferencia fallida");
+    // Deposit function restricted ONLY to the Ruleta Contract
+    function depositFromPlayer(address player, uint256 amount) external onlyRuletaContract {
+      require(player != address(0), "Player address cannot be zero");
+      require(amount > 0, "Deposit amount must be greater than zero");
+
+      // This transfer relies on the player having previously approved this Tesoreria contract
+      uint256 initialBalance = stableCoin.balanceOf(address(this));
+      require(stableCoin.transferFrom(player, address(this), amount), "Stablecoin transferFrom failed");
+      uint256 finalBalance = stableCoin.balanceOf(address(this));
+      require(finalBalance == initialBalance + amount, "Deposit amount mismatch"); // Sanity check
+
       totalDeposits += amount;
-        // Lógica adicional si es necesaria, como actualizar balances, etc.
-    }    
-    function withdrawWinnings(address recipient, uint256 amount) external {
-        require(msg.sender == owner() || tx.origin == authorizedCaller, "Only owner or authorized caller can call this function");
-        if (amount > stableCoin.balanceOf(address(this)) && stableCoin.balanceOf(address(this)) > 0) {
-          uint256 stableCoin_total_balance = stableCoin.balanceOf(address(this));
-          require(stableCoin.transfer(recipient, stableCoin_total_balance), "Transfer stablecoin failed");
-          require(ruletaToken.transfer(recipient, amount - stableCoin_total_balance), "Transfer ruletatoken failed");
-        } else if (amount > stableCoin.balanceOf(address(this)) && stableCoin.balanceOf(address(this)) == 0) {
-          require(ruletaToken.transfer(recipient, amount), "Transfer ruletatoken failed");
-        } else {
-          // require(stableCoin.balanceOf(address(this)) >= amount, "Insufficient funds in Tesoreria");
-          require(stableCoin.transfer(recipient, amount), "Transfer stablecoin failed");
-        }
+      emit DepositReceived(player, amount);
     }
-    // Función para establecer una dirección autorizada
-    function setAuthorizedCaller(address _caller) public {
-        require(_caller != address(0), "La direccion autorizada no puede ser cero");
-        authorizedCaller = _caller;
-    }
-}
 
+    // Player winnings withdrawal, restricted ONLY to the Ruleta Contract
+    function withdrawWinnings(address recipient, uint256 amount) external onlyRuletaContract {
+        require(recipient != address(0), "Recipient address cannot be zero");
+        require(amount > 0, "Withdrawal amount must be positive");
+
+        uint256 usdtBalance = stableCoin.balanceOf(address(this));
+        uint256 rbtBalance = ruletaToken.balanceOf(address(this));
+        uint256 usdtToSend = 0;
+        uint256 rbtToSend = 0;
+
+        if (amount <= usdtBalance) {
+            // Sufficient USDT funds
+            usdtToSend = amount;
+            require(stableCoin.transfer(recipient, usdtToSend), "Transfer stablecoin full failed");
+        } else {
+            // Insufficient USDT, use all available USDT and top up with RBT
+            usdtToSend = usdtBalance;
+            rbtToSend = amount - usdtBalance;
+
+            require(rbtBalance >= rbtToSend, "Insufficient combined funds (USDT + RBT)");
+
+            if (usdtToSend > 0) {
+                 require(stableCoin.transfer(recipient, usdtToSend), "Transfer stablecoin partial failed");
+            }
+            require(ruletaToken.transfer(recipient, rbtToSend), "Transfer ruletatoken partial failed");
+        }
+
+        emit WinningsPaid(recipient, usdtToSend, rbtToSend);
+    }
+
+     // House profit withdrawal, restricted to the Tesoreria owner (deployer)
+     function withdrawHouseProfits(uint256 usdtAmount, uint256 ruletaTokenAmount) external onlyOwner {
+         // It's complex to determine exact "profit" on-chain easily.
+         // This function simply allows the owner to withdraw available funds.
+         // Ensure off-chain accounting is done correctly to avoid withdrawing player funds.
+         uint256 currentUsdt = stableCoin.balanceOf(address(this));
+         uint256 currentRbt = ruletaToken.balanceOf(address(this));
+
+         if (usdtAmount > 0) {
+             require(currentUsdt >= usdtAmount, "Insufficient house USDT funds");
+             require(stableCoin.transfer(msg.sender, usdtAmount), "House USDT withdrawal failed");
+         }
+          if (ruletaTokenAmount > 0) {
+             require(currentRbt >= ruletaTokenAmount, "Insufficient house RBT funds");
+             require(ruletaToken.transfer(msg.sender, ruletaTokenAmount), "House RBT withdrawal failed");
+         }
+         emit HouseProfitWithdrawn(msg.sender, usdtAmount, ruletaTokenAmount);
+     }
+
+     // Function for owner to add more RuletaTokens if needed (e.g., initial supply or top-up)
+     function depositRuletaTokens(uint256 amount) external onlyOwner {
+        require(amount > 0, "Amount must be positive");
+        require(ruletaToken.transferFrom(msg.sender, address(this), amount), "RBT deposit failed");
+     }
+}
